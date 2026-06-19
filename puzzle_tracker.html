@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>36字元排列猜謎追蹤器</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0d1117; color: #c9d1d9; font-family: 'SF Mono', 'Consolas', monospace; padding: 20px; }
+h1 { color: #58a6ff; margin-bottom: 8px; font-size: 20px; }
+.sub { color: #8b949e; font-size: 13px; margin-bottom: 20px; }
+.panel { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+.panel h2 { font-size: 14px; color: #58a6ff; margin-bottom: 10px; }
+.row { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+input, button { background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; padding: 8px 12px; border-radius: 6px; font-family: inherit; font-size: 13px; }
+input:focus { outline: none; border-color: #58a6ff; }
+button { cursor: pointer; background: #238636; border-color: #2ea043; color: #fff; font-weight: bold; }
+button:hover { background: #2ea043; }
+button.danger { background: #da3633; border-color: #f85149; }
+button.danger:hover { background: #f85149; }
+button.secondary { background: #21262d; border-color: #30363d; color: #c9d1d9; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid #30363d; }
+th { color: #8b949e; font-weight: normal; }
+.guess-str { font-size: 11px; word-break: break-all; max-width: 300px; }
+.locked-cell { background: #1a3a2a; color: #3fb950; border-radius: 4px; padding: 2px 6px; margin: 1px; display: inline-block; font-size: 11px; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: bold; }
+.badge-a { background: #1a3a2a; color: #3fb950; }
+.badge-b { background: #1a2a3a; color: #58a6ff; }
+.progress-bar { height: 6px; background: #21262d; border-radius: 3px; margin: 10px 0; overflow: hidden; }
+.progress-fill { height: 100%; background: #58a6ff; transition: width 0.3s; }
+.stats { display: flex; gap: 20px; flex-wrap: wrap; }
+.stat { text-align: center; }
+.stat-val { font-size: 24px; font-weight: bold; color: #58a6ff; }
+.stat-label { font-size: 11px; color: #8b949e; }
+#charGrid { display: flex; flex-wrap: wrap; gap: 3px; }
+.char-box { width: 32px; height: 32px; border: 1px solid #30363d; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 14px; position: relative; background: #0d1117; }
+.char-box.confirmed { background: #1a3a2a; border-color: #3fb950; color: #3fb950; }
+.char-box.excluded { opacity: 0.3; text-decoration: line-through; }
+.char-box.locked { background: #1a2a3a; border-color: #58a6ff; color: #58a6ff; }
+.char-box .pos { position: absolute; bottom: 1px; right: 3px; font-size: 8px; color: #8b949e; }
+#nextGuess { font-size: 18px; letter-spacing: 2px; word-break: break-all; background: #0d1117; padding: 12px; border-radius: 6px; border: 1px solid #30363d; margin: 10px 0; }
+#nextGuess span { display: inline-block; width: 32px; text-align: center; padding: 4px 0; margin: 1px; border-radius: 3px; }
+#nextGuess span.locked-pos { background: #1a2a3a; color: #58a6ff; }
+#nextGuess span.new-pos { background: #1a3a2a; color: #3fb950; }
+.phase-tag { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+.phase-find { background: #3a1a2a; color: #f0883e; }
+.phase-locate { background: #1a3a2a; color: #3fb950; }
+.warn { color: #f0883e; font-size: 12px; }
+.pos-cell { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 6px; min-height: 60px; font-size: 11px; }
+.pos-cell.locked-cell-pos { border-color: #58a6ff; background: #121d2a; }
+.pos-num { color: #8b949e; font-size: 10px; margin-bottom: 2px; }
+.pos-locked { color: #58a6ff; font-weight: bold; font-size: 16px; text-align: center; margin: 4px 0; }
+.pos-chars { color: #c9d1d9; word-break: break-all; }
+.pos-chars .used { color: #484f58; text-decoration: line-through; }
+</style>
+</head>
+<body>
+
+<h1>36字元排列猜謎追蹤器</h1>
+<p class="sub">0-9 + A-Z + a-z → 隨機選36字元排列 | 上限200次測試</p>
+
+<div class="row">
+  <div class="panel" style="flex:1; min-width:300px;">
+    <h2>狀態</h2>
+    <div class="stats">
+      <div class="stat"><div class="stat-val" id="stTries">0</div><div class="stat-label">已用次數</div></div>
+      <div class="stat"><div class="stat-val" id="stRemain">200</div><div class="stat-label">剩餘</div></div>
+      <div class="stat"><div class="stat-val" id="stFound">0</div><div class="stat-label">已確認字元</div></div>
+      <div class="stat"><div class="stat-val" id="stLocked">0</div><div class="stat-label">已鎖定位置</div></div>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="progressBar" style="width:0%"></div></div>
+    <span class="phase-tag phase-find" id="phaseTag">找字元階段</span>
+  </div>
+
+  <div class="panel" style="flex:1; min-width:300px;">
+    <h2>輸入測試結果</h2>
+    <div class="row">
+      <input type="text" id="guessInput" placeholder="貼上測試字串(36字元)" style="flex:3;">
+      <input type="number" id="AInput" placeholder="A" style="width:60px; flex:0;" min="0" max="36">
+      <input type="number" id="BInput" placeholder="B" style="width:60px; flex:0;" min="0" max="36">
+      <button onclick="addResult()">記錄</button>
+    </div>
+    <p class="warn" id="warnMsg"></p>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>下一推薦測試</h2>
+  <div id="nextGuess">點擊「生成建議」開始</div>
+  <button onclick="genNext()" style="margin-top:8px;">生成建議</button>
+  <button onclick="copyGuess()" class="secondary" style="margin-left:8px;">複製</button>
+</div>
+
+<div class="panel">
+  <h2>字元追蹤 (62→36)</h2>
+  <div id="charGrid"></div>
+</div>
+
+<div class="panel">
+  <h2>位置追蹤 (每位置出現過的字元)</h2>
+  <div id="posGrid" style="display:grid; grid-template-columns:repeat(9,1fr); gap:4px;"></div>
+</div>
+
+<div class="panel">
+  <h2>歷史記錄</h2>
+  <table>
+    <thead><tr><th>#</th><th>測試字串</th><th>A</th><th>B</th><th>總匹配</th></tr></thead>
+    <tbody id="historyBody"></tbody>
+  </table>
+</div>
+
+<script>
+const ALL_CHARS = [];
+for(let i=0;i<10;i++) ALL_CHARS.push(String(i));
+for(let c=65;c<=90;c++) ALL_CHARS.push(String.fromCharCode(c));
+for(let c=97;c<=122;c++) ALL_CHARS.push(String.fromCharCode(c));
+
+const TOTAL = 36, MAX = 200;
+
+let state = {
+  phase: 'find_chars', // 'find_chars' | 'locate'
+  tries: 0,
+  locked: {}, // pos→char
+  confirmedChars: new Set(),
+  excludedChars: new Set(),
+  charTriedPositions: {}, // char→Set of positions
+  posTriedChars: {}, // pos→Set of chars
+  history: [],
+  charPoolIndex: 0,
+  testedCharBatches: [], // array of {chars:Set, totalMatch:int}
+  lastA: 0,
+};
+
+function reset() {
+  state = {
+    phase: 'find_chars',
+    tries: 0,
+    locked: {},
+    confirmedChars: new Set(),
+    excludedChars: new Set(),
+    charTriedPositions: {},
+    posTriedChars: {},
+    history: [],
+    charPoolIndex: 0,
+    testedCharBatches: [],
+    lastA: 0,
+  };
+  renderAll();
+}
+
+function addResult() {
+  const guess = document.getElementById('guessInput').value.trim();
+  const A = parseInt(document.getElementById('AInput').value);
+  const B = parseInt(document.getElementById('BInput').value);
+  
+  if(guess.length !== TOTAL) {
+    document.getElementById('warnMsg').textContent = '字串長度必須為36';
+    return;
+  }
+  if(isNaN(A) || isNaN(B)) {
+    document.getElementById('warnMsg').textContent = '請輸入A和B';
+    return;
+  }
+  if(A + B > TOTAL) {
+    document.getElementById('warnMsg').textContent = 'A+B不能超過36';
+    return;
+  }
+  document.getElementById('warnMsg').textContent = '';
+  
+  state.tries++;
+  state.history.push({guess, A, B, total: A+B});
+  
+  if(state.phase === 'find_chars') {
+    processFindChars(guess, A, B);
+  } else {
+    processLocate(guess, A, B);
+  }
+  
+  state.lastA = A;
+  document.getElementById('guessInput').value = '';
+  document.getElementById('AInput').value = '';
+  document.getElementById('BInput').value = '';
+  renderAll();
+  genNext();
+}
+
+function processFindChars(guess, A, B) {
+  const totalMatch = A + B;
+  const chars = new Set(guess.split(''));
+  
+  // Record batch
+  state.testedCharBatches.push({chars: new Set(chars), total: totalMatch});
+  
+  // Mark confirmed chars from A
+  // We can't easily infer which chars from A, so we track via locate phase
+  
+  if(totalMatch === TOTAL) {
+    state.confirmedChars = new Set(chars);
+    state.phase = 'locate';
+    state.candidateChars = new Set(chars);
+  }
+  
+  // If we have 36 distinct chars and totalMatch < 36, some are wrong.
+  // We'll use exclusion logic after multiple rounds.
+}
+
+function processLocate(guess, A, B) {
+  const chars = guess.split('');
+  const prevLockedCount = Object.keys(state.locked).length;
+  
+  // Update position/chars tried tracking
+  for(let pos=0; pos<TOTAL; pos++) {
+    const ch = chars[pos];
+    if(!state.charTriedPositions[ch]) state.charTriedPositions[ch] = new Set();
+    if(!state.posTriedChars[pos]) state.posTriedChars[pos] = new Set();
+    state.charTriedPositions[ch].add(pos);
+    state.posTriedChars[pos].add(ch);
+  }
+  
+  // If A increased, some new positions are correct
+  // We need the caller to help identify which via x-tests
+  if(A > prevLockedCount) {
+    // New locks exist but we don't know which yet
+  }
+}
+
+let nextGuessCache = '';
+
+function genNext() {
+  if(state.phase === 'find_chars') {
+    nextGuessCache = genFindCharsGuess();
+  } else {
+    nextGuessCache = genLocateGuess();
+  }
+  renderNextGuess();
+}
+
+function genFindCharsGuess() {
+  // Strategy: test new chars, accumulate which are correct
+  let usedChars = new Set();
+  for(const batch of state.testedCharBatches) {
+    for(const c of batch.chars) usedChars.add(c);
+  }
+  
+  const available = ALL_CHARS.filter(c => !usedChars.has(c));
+  
+  let guess;
+  if(available.length >= TOTAL) {
+    guess = available.slice(0, TOTAL).join('');
+  } else {
+    // Not enough new chars, mix with tested ones
+    const remaining = ALL_CHARS.filter(c => !state.excludedChars.has(c));
+    // Pick unexplored chars first, then least-tested
+    guess = remaining.slice(0, TOTAL).join('');
+  }
+  return guess;
+}
+
+function genLocateGuess() {
+  const chars = [...state.confirmedChars];
+  const result = Array(TOTAL).fill(null);
+  
+  // Place locked chars
+  for(const [pos, ch] of Object.entries(state.locked)) {
+    result[parseInt(pos)] = ch;
+  }
+  
+  const lockedChars = new Set(Object.values(state.locked));
+  const remainingChars = chars.filter(c => !lockedChars.has(c));
+  const remainingPositions = [];
+  for(let i=0; i<TOTAL; i++) {
+    if(!(i in state.locked)) remainingPositions.push(i);
+  }
+  
+  // Greedy: assign each position a char not yet tried there
+  let used = new Set();
+  for(const pos of remainingPositions) {
+    const triedHere = state.posTriedChars[pos] || new Set();
+    for(const ch of remainingChars) {
+      const triedThere = state.charTriedPositions[ch] || new Set();
+      if(!used.has(ch) && !triedHere.has(ch) && !triedThere.has(pos)) {
+        result[pos] = ch;
+        used.add(ch);
+        break;
+      }
+    }
+  }
+  
+  // Fill remaining with any available
+  const unfilled = remainingPositions.filter(p => result[p] === null);
+  const unused = remainingChars.filter(c => !used.has(c));
+  for(let i=0; i<unfilled.length && i<unused.length; i++) {
+    result[unfilled[i]] = unused[i];
+  }
+  
+  // Any remaining null → fill with random from chars
+  const leftover = remainingPositions.filter(p => result[p] === null);
+  const leftoverChars = chars.filter(c => !result.includes(c));
+  for(let i=0; i<leftover.length && i<leftoverChars.length; i++) {
+    result[leftover[i]] = leftoverChars[i];
+  }
+  
+  return result.join('');
+}
+
+function copyGuess() {
+  navigator.clipboard.writeText(nextGuessCache);
+}
+
+function renderAll() {
+  document.getElementById('stTries').textContent = state.tries;
+  document.getElementById('stRemain').textContent = MAX - state.tries;
+  document.getElementById('stFound').textContent = state.confirmedChars.size;
+  document.getElementById('stLocked').textContent = Object.keys(state.locked).length;
+  document.getElementById('progressBar').style.width = (state.tries / MAX * 100) + '%';
+  
+  const tag = document.getElementById('phaseTag');
+  if(state.phase === 'find_chars') {
+    tag.textContent = '找字元階段';
+    tag.className = 'phase-tag phase-find';
+  } else {
+    tag.textContent = '定位階段';
+    tag.className = 'phase-tag phase-locate';
+  }
+  
+  renderCharGrid();
+  renderPosGrid();
+  renderHistory();
+}
+
+function renderCharGrid() {
+  const grid = document.getElementById('charGrid');
+  let html = '';
+  for(const ch of ALL_CHARS) {
+    let cls = 'char-box';
+    if(state.confirmedChars.has(ch)) cls += ' confirmed';
+    if(state.excludedChars.has(ch)) cls += ' excluded';
+    if(Object.values(state.locked).includes(ch)) cls += ' locked';
+    html += `<div class="${cls}">${ch}</div>`;
+  }
+  grid.innerHTML = html;
+}
+
+function renderPosGrid() {
+  const grid = document.getElementById('posGrid');
+  let html = '';
+  for(let pos=0; pos<TOTAL; pos++) {
+    let cls = 'pos-cell';
+    if(state.locked[pos]) cls += ' locked-cell-pos';
+    
+    const lockedCh = state.locked[pos] || '';
+    const triedSet = state.posTriedChars[pos] || new Set();
+    // 排除已鎖定的字元，及已確認不在這個位置的（在locate階段中，A沒增加代表沒鎖定，但不代表該char一定不在這個位置）
+    // 簡單顯示：列出所有在該位置出現過的字元
+    const triedArr = [...triedSet].sort();
+    
+    html += `<div class="${cls}">
+      <div class="pos-num">#${pos}</div>`;
+    if(lockedCh) {
+      html += `<div class="pos-locked">${lockedCh}</div>`;
+    }
+    if(triedArr.length > 0) {
+      html += `<div class="pos-chars">${triedArr.join('')}</div>`;
+    }
+    html += `</div>`;
+  }
+  grid.innerHTML = html;
+}
+
+function renderHistory() {
+  const tbody = document.getElementById('historyBody');
+  let html = '';
+  for(let i=state.history.length-1; i>=0; i--) {
+    const h = state.history[i];
+    html += `<tr>
+      <td>${i+1}</td>
+      <td class="guess-str">${h.guess}</td>
+      <td><span class="badge badge-a">${h.A}A</span></td>
+      <td><span class="badge badge-b">${h.B}B</span></td>
+      <td>${h.total}</td>
+    </tr>`;
+  }
+  tbody.innerHTML = html;
+}
+
+function renderNextGuess() {
+  const div = document.getElementById('nextGuess');
+  if(!nextGuessCache) { div.textContent = '點擊「生成建議」'; return; }
+  
+  let html = '';
+  for(let i=0; i<nextGuessCache.length; i++) {
+    const ch = nextGuessCache[i];
+    let cls = '';
+    if(state.locked[i] === ch) cls = 'locked-pos';
+    html += `<span class="${cls}">${ch}</span>`;
+  }
+  div.innerHTML = html;
+}
+
+// Init
+renderAll();
+</script>
+</body>
+</html>
