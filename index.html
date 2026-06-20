@@ -197,10 +197,24 @@ function genNext(){
 }
 
 function genFindGuess(){
-  // 階段1: 仍有未測試字元 → 優先使用
+  // 階段1: 仍有未測試字元 → 均勻取樣（數字/大寫/小寫各約1/3）
   const untested=ALL_CHARS.filter(c=>!state.testedChars.has(c)&&!state.excludedChars.has(c));
   if(untested.length>=TOTAL){
-    return untested.slice(0,TOTAL).join('');
+    const nums=untested.filter(c=>c>='0'&&c<='9');
+    const uppers=untested.filter(c=>c>='A'&&c<='Z');
+    const lowers=untested.filter(c=>c>='a'&&c<='z');
+    const result=[];
+    const pool=[...nums,...uppers,...lowers];
+    // 依序從三類各取一個，確保均衡
+    let ni=0, ui=0, li=0;
+    while(result.length<TOTAL){
+      if(ni<nums.length) result.push(nums[ni++]);
+      if(result.length>=TOTAL) break;
+      if(ui<uppers.length) result.push(uppers[ui++]);
+      if(result.length>=TOTAL) break;
+      if(li<lowers.length) result.push(lowers[li++]);
+    }
+    return result.join('');
   }
 
   // 階段2: 所有字元已測 → 加權評分策略
