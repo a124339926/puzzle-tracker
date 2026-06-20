@@ -85,6 +85,7 @@ th{color:#8b949e;font-weight:normal;font-size:11px}
 <div class="panel">
   <h2>下一推薦測試 <button onclick="copyGuess()" class="secondary sm" style="margin-left:8px">複製</button></h2>
   <div id="nextGuess">載入中...</div>
+  <p style="font-size:11px;color:#8b949e;margin-top:4px" id="strategyHint"></p>
   <button onclick="genNext()" style="margin-top:6px">重新生成建議</button>
 </div>
 
@@ -121,6 +122,10 @@ function makeState(){
     testedChars:new Set(),
     charTriedPositions:{},
     posTriedChars:{},
+    charScore:{},          // 字元加權分數 (累積 A+B)
+    charCount:{},          // 字元出現次數
+    bestAB:0,              // 歷史最佳 A+B
+    stagnantRounds:0,      // 連續無進展回合
     history:[],
     testedBatches:[],
     lastA:0,
@@ -153,6 +158,17 @@ function addResult(){
     state.posTriedChars[pos].add(ch);
   });
 
+  // 加權分數追蹤
+  const ab = A+B;
+  chars.forEach(ch => {
+    state.charScore[ch] = (state.charScore[ch]||0) + ab;
+    state.charCount[ch] = (state.charCount[ch]||0) + 1;
+  });
+
+  // 停滯偵測
+  if(ab > state.bestAB){ state.bestAB = ab; state.stagnantRounds = 0; }
+  else { state.stagnantRounds++; }
+
   if(state.phase==='find_chars'){
     if(A+B===TOTAL){
       state.confirmedChars=new Set(chars);
@@ -181,17 +197,53 @@ function genNext(){
 }
 
 function genFindGuess(){
-  // 策略：每次盡量用新字元，加速找出36個正確字元
+  // 階段1: 仍有未測試字元 → 優先使用
   const untested=ALL_CHARS.filter(c=>!state.testedChars.has(c)&&!state.excludedChars.has(c));
   if(untested.length>=TOTAL){
     return untested.slice(0,TOTAL).join('');
   }
-  // 混合：新字元優先，不足時補已測試但未排除的
-  const testedOk=[...state.testedChars].filter(c=>!state.excludedChars.has(c));
-  // 隨機打亂 testedOk 避免每次都取前幾個
-  const arr=[...untested,...testedOk.sort(()=>Math.random()-.5)];
-  const seen=new Set(); const result=[];
-  for(const c of arr){if(!seen.has(c)){seen.add(c);result.push(c);}if(result.length===TOTAL)break;}
+
+  // 階段2: 所有字元已測 → 加權評分策略
+  const candidates = [...state.testedChars].filter(c=>!state.excludedChars.has(c));
+
+  // 計算每個字元的平均分 (charScore / charCount)，排除從未出現的字元
+  const scored = candidates.map(ch => ({
+    ch,
+    avg: (state.charScore[ch]||0) / (state.charCount[ch]||1),
+    cnt: state.charCount[ch]||0
+  }));
+
+  // 依平均分降序排列
+  scored.sort((a,b) => b.avg - a.avg);
+
+  // 策略A: 停滯≥3輪 → 排除法：踢掉分數最低的 N 個，換入低頻字元
+  if(state.stagnantRounds >= 3 && state.tries > 5){
+    const dropN = Math.max(1, Math.min(8, Math.floor(state.stagnantRounds / 2)));
+    const keep = scored.slice(0, scored.length - dropN).map(x => x.ch);
+    // 從低分字元+未充分測試的字元中補
+    const lowScored = scored.slice(-dropN).map(x => x.ch);
+    const untestedLow = ALL_CHARS.filter(c => !keep.includes(c) && !state.excludedChars.has(c));
+    const pool = new Set(keep);
+    for(const ch of untestedLow){
+      if(pool.size >= TOTAL) break;
+      pool.add(ch);
+    }
+    // 如果還不夠，從低分中補
+    for(const ch of lowScored){
+      if(pool.size >= TOTAL) break;
+      pool.add(ch);
+    }
+    const result = [...pool];
+    // 隨機打亂
+    for(let i=result.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1));[result[i],result[j]]=[result[j],result[i]]; }
+    return result.slice(0,TOTAL).join('');
+  }
+
+  // 策略B: 取加權分 Top36，輕微打亂增加多樣性
+  const top = scored.slice(0, TOTAL).map(x => x.ch);
+  // 隨機打亂（保留高分字元，只是變換排列順序）
+  for(let i=top.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1));[top[i],top[j]]=[top[j],top[i]]; }
+  const result = top.slice(0, TOTAL);
   return result.join('');
 }
 
@@ -296,6 +348,17 @@ function renderNextGuess(){
     html+=`<span class="${cls}">${ch}</span>`;
   }
   div.innerHTML=html;
+
+  // 策略提示
+  const hint=document.getElementById('strategyHint');
+  if(state.phase==='find_chars'){
+    const untested=ALL_CHARS.filter(c=>!state.testedChars.has(c)&&!state.excludedChars.has(c));
+    if(untested.length>=TOTAL) hint.textContent='策略：優先使用未測試字元';
+    else if(state.stagnantRounds>=3) hint.textContent=`策略：排除法 (停滯${state.stagnantRounds}輪，最佳A+B=${state.bestAB})`;
+    else hint.textContent=`策略：加權評分 Top36 (最佳A+B=${state.bestAB}，停滯${state.stagnantRounds}輪)`;
+  }else{
+    hint.textContent=`策略：避開已試位置的定位 (已鎖定${Object.keys(state.locked).length}/36)`;
+  }
 }
 
 // Init
